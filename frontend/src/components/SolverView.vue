@@ -150,7 +150,7 @@ function cellTitle(cell) {
       <!-- 标题 -->
       <header class="hero">
         <h1><span class="spade">♠</span> 德州扑克 <span class="accent"><Term id="gto">GTO</Term></span> <Term id="solver">Solver</Term></h1>
-        <p class="sub">浏览器内 <Term id="wasm">WASM</Term> 实时求解 · 后翻牌博弈最优策略</p>
+        <p class="sub">浏览器内 <Term id="wasm">WASM</Term> 实时求解 · <Term id="postflop">后翻牌</Term>博弈最优策略</p>
       </header>
 
       <!-- 输入面板 -->
@@ -185,7 +185,7 @@ function cellTitle(cell) {
           <button class="solve" :disabled="busy" @click="run">
             <span v-if="busy" class="spinner" aria-hidden="true"></span>
             <template v-if="busy">求解中…</template>
-            <Term v-else id="solver">Solve</Term>
+            <Term v-else id="solver" no-click>Solve</Term>
           </button>
         </div>
       </section>
@@ -226,7 +226,7 @@ function cellTitle(cell) {
           <span class="dot"></span>求解中 {{ elapsed.toFixed(1) }}s ·一次性求解，请稍候
         </span>
         <template v-if="memMB !== null && !busy">
-          <span class="badge"><Term id="mem">内存</Term> <b>{{ memMB.toFixed(1) }}</b> MB</span>
+          <span class="badge"><Term id="mem">内存</Term> <b>{{ memMB.toFixed(1) }}</b> <Term id="mb">MB</Term></span>
           <span class="badge"><Term id="exploitability">exploitability</Term> <b>{{ expl?.toFixed(3) }}</b></span>
         </template>
       </div>
