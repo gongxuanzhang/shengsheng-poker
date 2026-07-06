@@ -1,0 +1,13 @@
+# ===== Rust 编译产物 =====
+**/target/
+
+# ===== Node 依赖与构建产物 =====
+**/node_modules/
+frontend/dist/
+
+# ===== solver-wasm 的临时 wasm 产物(前端用的 wasm 在 frontend/src/wasm,已提交) =====
+solver-wasm/pkg/
+
+# ===== 杂项 =====
+.DS_Store
+*.log

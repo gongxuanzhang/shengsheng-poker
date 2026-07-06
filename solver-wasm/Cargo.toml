@@ -1,0 +1,19 @@
+[package]
+name = "solver-wasm"
+version = "0.1.0"
+edition = "2021"
+description = "WASM bindings for postflop-solver"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+wasm-bindgen = "=0.2.126"   # 精确锁,与本机 wasm-pack 0.15 内置的 wasm-bindgen-cli 匹配
+# 依赖本地的 postflop-solver;禁用其 default features(bincode/rayon),走单线程 wasm
+postflop-solver = { path = "../postflop-solver", default-features = false }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+console_error_panic_hook = "0.1"   # 让 Rust panic 的文案进浏览器 console
+
+[profile.release]
+opt-level = 3

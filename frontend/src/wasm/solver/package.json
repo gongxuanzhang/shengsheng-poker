@@ -1,0 +1,16 @@
+{
+  "name": "solver-wasm",
+  "type": "module",
+  "description": "WASM bindings for postflop-solver",
+  "version": "0.1.0",
+  "files": [
+    "solver_bg.wasm",
+    "solver.js",
+    "solver.d.ts"
+  ],
+  "main": "solver.js",
+  "types": "solver.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}
