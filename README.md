@@ -39,6 +39,11 @@
 | `frontend/src/wasm/solver/` | 由 `solver-wasm` 编译得到的 WASM 产物(已提交,便于开箱运行)。 |
 | [`Makefile`](./Makefile) | 仓库级构建/开发命令入口。 |
 
+## 架构与工程文档
+
+- [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) —— 分层结构、模块边界、数据流、构建/发布边界,以及未来 Go 后台的接入方式。
+- [docs/ENGINEERING_ROADMAP.md](./docs/ENGINEERING_ROADMAP.md) —— 按短期 / 中期 / 长期分阶段的工程能力规划(含收益、落地文件、验收方式)。
+
 ## 环境要求
 
 | 工具 | 版本 | 何时需要 |
@@ -106,8 +111,8 @@ make test-frontend  # 仅前端构建校验(npm run check)
 
 ## 后续规划
 
-- 预留 **Go 后台服务**:后续将新增 `backend/`(暂定),并在根 `Makefile` 中扩展
-  对应命令(如 `build-backend`、`test-go`),与现有前端/引擎共用同一构建入口。
+工程演进(含预留的 Go 后台服务及其接入方式)见 [docs/ENGINEERING_ROADMAP.md](./docs/ENGINEERING_ROADMAP.md)
+与 [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md)。
 
 ## 贡献指南
 

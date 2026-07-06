@@ -1,0 +1,63 @@
+# CI —— PR / push 上的构建与测试门禁。
+#
+# 设计对齐 docs/ENGINEERING_ROADMAP.md 的 S1–S3,并复用根 Makefile 作为唯一命令入口:
+#   - frontend job : 必过门禁。等价于本地 `make build-frontend`,已在缺 Rust 工具链的环境验证。
+#   - rust job     : 引擎 + WASM 接口层测试与重编。CI 会显式安装 cargo/wasm-pack,
+#                    因此这里作为硬门禁(与"本地可缺 Rust"不冲突——那是开发便利,不是 CI 约束)。
+#   - WASM 一致性  : 重编后与已提交产物比对。当前设为 informational(continue-on-error),
+#                    待确认 wasm-pack 输出可复现后再按 S3 升级为硬门禁。
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# 同一分支的旧运行自动取消,省 CI 额度
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  frontend:
+    name: 前端构建校验
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      # 复用 Makefile 入口:内部为 `npm ci && npm run build`(= vite build 校验可打包)
+      - name: Frontend CI gate (make ci-frontend)
+        run: make ci-frontend
+
+  rust:
+    name: 引擎与 WASM 接口层
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - name: Install wasm-pack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+      # 引擎 + 接口层测试
+      - name: Test Rust (make test-rust)
+        run: make test-rust
+      # 由源码重新编译 WASM(输出到 frontend/src/wasm/solver/)
+      - name: Build WASM (make build-wasm)
+        run: make build-wasm
+      # S3:重编产物应与已提交的一致。暂设为 informational,详见 workflow 顶部说明。
+      - name: Check committed WASM is up to date
+        continue-on-error: true
+        run: |
+          git diff --stat -- frontend/src/wasm/solver/
+          git diff --exit-code -- frontend/src/wasm/solver/ \
+            || echo "::warning::已提交的 WASM 与源码重编结果不一致,改动引擎后请 make build-wasm 并提交产物。"

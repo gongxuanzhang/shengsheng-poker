@@ -17,7 +17,7 @@ WASM_PACK ?= wasm-pack
 .DEFAULT_GOAL := help
 
 .PHONY: help install dev build build-wasm build-frontend \
-        test test-rust test-frontend clean doctor
+        test test-rust test-frontend ci-frontend clean doctor
 
 help: ## 显示可用命令
 	@echo "shengsheng-poker — 常用命令:"
@@ -26,6 +26,7 @@ help: ## 显示可用命令
 		| awk 'BEGIN {FS = ":.*## "}; {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
 	@echo ""
 	@echo "提示: 仅运行前端只需 node/npm;重新编译 WASM 引擎需 cargo + wasm-pack(见 make doctor)。"
+	@echo "工程文档: docs/ARCHITECTURE.md(架构/边界/数据流) · docs/ENGINEERING_ROADMAP.md(路线图)。"
 
 install: ## 安装前端依赖 (npm ci)
 	cd $(FRONTEND_DIR) && $(NPM) ci
@@ -53,6 +54,9 @@ test-rust: ## 运行 Rust 引擎与 WASM 接口层的测试
 
 test-frontend: $(FRONTEND_DIR)/node_modules ## 前端质量检查 (构建校验)
 	cd $(FRONTEND_DIR) && $(NPM) run check
+
+ci-frontend: ## CI 前端门禁 (干净安装依赖并构建)
+	$(MAKE) build-frontend
 
 clean: ## 清理构建产物 (Rust target、wasm pkg、前端 dist/node_modules、Vite 缓存)
 	rm -rf $(ENGINE_DIR)/target
