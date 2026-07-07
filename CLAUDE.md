@@ -4,13 +4,29 @@
 
 ## 项目简介
 
-shengsheng-poker 是一个德州扑克 GTO 求解器,当前跨三层:
+shengsheng-poker 正从"单局面 GTO 求解器"演进为 **GTO 训练 + 牌谱复盘平台**,建立在
+vendored 的两人翻后 GTO 引擎之上。架构权威见 [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md),
+阶段划分见 [docs/ENGINEERING_ROADMAP.md](./docs/ENGINEERING_ROADMAP.md)(本文不复述,单一事实源)。
+
+当前分层:
 
 - `postflop-solver/` —— vendored 的 Rust GTO 引擎(AGPL-3.0)。
-- `solver-wasm/` —— wasm-bindgen 接口层,编译出前端使用的 WASM。
+- `solver-wasm/` —— wasm-bindgen 接口层,编译出前端使用的 WASM;`solve_spot` 正演进为
+  `open_spot`/`query_node`/`close_spot` 会话 API(旧接口降为薄包装,向后兼容)。
 - `frontend/` —— Vue 3 + Vite 前端;`frontend/src/wasm/solver/` 是**已提交**的 WASM 产物。
+- `frontend/src/domain/` —— 领域模型 / 策略服务(`GtoPolicy`)/ 评估引擎,训练与复盘的公共地基。
 
-未来计划加入 Go 后台服务(暂定 `backend/`)。
+未来计划加入后端服务(暂定 `backend/`,倾向 Rust axum,命中 ARCHITECTURE §9 触发器才引入)。
+
+## 契约:单一事实源
+
+核心类型/接口只在代码定义一次,文档只描述+引用不复制:
+
+- 领域模型类型:`frontend/src/domain/types.js`(`Hand`/`GameState`/`DecisionNode` 等 @typedef,
+  含 `GameState=reduce(setup,actionLog,boardLog)` 不变式与会话 API 契约头注)。
+- 策略接口:`frontend/src/domain/policy/gtoPolicy.js`(`GtoPolicy.query(node)`)。
+- 评估契约:`frontend/src/domain/eval/deviationEvaluator.js`。
+- 前端纯 JS(项目现状非 TS),类型用 JSDoc @typedef。
 
 ## 构建入口
 

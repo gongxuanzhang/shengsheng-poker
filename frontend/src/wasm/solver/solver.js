@@ -1,6 +1,14 @@
 /* @ts-self-types="./solver.d.ts" */
 
 /**
+ * 会话 API ③:释放句柄对应的常驻 game,回收内存(会话生命周期结束时调用)。
+ * @param {number} handle
+ */
+export function close_spot(handle) {
+    wasm.close_spot(handle);
+}
+
+/**
  * 模块加载时装 panic hook,让 Rust panic 文案进浏览器 console
  * (否则 panic 在浏览器只是无信息的 RuntimeError)。
  */
@@ -9,9 +17,57 @@ export function on_start() {
 }
 
 /**
- * 求解一个翻后局面,返回 root(先行动方 OOP)的 GTO 策略(JSON 字符串)。
- * turn / river 传空串 "" 表示该街未发。
- * target_exploitability 单位是 % of pot(如 0.5 表示底池的 0.5%)。
+ * 会话 API ①:建局 + 求解一次,把 solved game 留在 Worker,返回句柄(u32)。
+ * 入参为 `OpenSpotRequest` 的 JSON 字符串(camelCase)。这是唯一的「重活」。
+ * @param {string} req_json
+ * @returns {number}
+ */
+export function open_spot(req_json) {
+    const ptr0 = passStringToWasm0(req_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.open_spot(ptr0, len0);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return ret[0] >>> 0;
+}
+
+/**
+ * 会话 API ②:从该街 root 沿 path(动作下标序列)导航到目标节点,读取该节点读数。
+ * 纯读取,微秒~低毫秒级,可反复调用。path 语义同引擎 `apply_history`:
+ * action 节点步为动作下标;chance 节点步为牌 ID(0xFFFFFFFF 表示自动取最小可发牌)。
+ * 返回 `NodeResult` 的 JSON 字符串。
+ * @param {number} handle
+ * @param {Uint32Array} path
+ * @returns {string}
+ */
+export function query_node(handle, path) {
+    let deferred3_0;
+    let deferred3_1;
+    try {
+        const ptr0 = passArray32ToWasm0(path, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.query_node(handle, ptr0, len0);
+        var ptr2 = ret[0];
+        var len2 = ret[1];
+        if (ret[3]) {
+            ptr2 = 0; len2 = 0;
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        deferred3_0 = ptr2;
+        deferred3_1 = len2;
+        return getStringFromWasm0(ptr2, len2);
+    } finally {
+        wasm.__wbindgen_free(deferred3_0, deferred3_1, 1);
+    }
+}
+
+/**
+ * 旧接口:求解一个翻后局面,返回 root(先行动方 OOP)的 GTO 策略(JSON 字符串)。
+ * turn / river 传空串 "" 表示该街未发。target_exploitability 单位是 % of pot。
+ *
+ * 现降为 `open_spot + query_node(root) + close_spot` 的薄包装:签名与返回形状
+ * (`SolveResult`)完全不变,SolverView 零改动。
  * @param {string} oop_range
  * @param {string} ip_range
  * @param {string} flop
@@ -112,12 +168,27 @@ function getStringFromWasm0(ptr, len) {
     return decodeText(ptr >>> 0, len);
 }
 
+let cachedUint32ArrayMemory0 = null;
+function getUint32ArrayMemory0() {
+    if (cachedUint32ArrayMemory0 === null || cachedUint32ArrayMemory0.byteLength === 0) {
+        cachedUint32ArrayMemory0 = new Uint32Array(wasm.memory.buffer);
+    }
+    return cachedUint32ArrayMemory0;
+}
+
 let cachedUint8ArrayMemory0 = null;
 function getUint8ArrayMemory0() {
     if (cachedUint8ArrayMemory0 === null || cachedUint8ArrayMemory0.byteLength === 0) {
         cachedUint8ArrayMemory0 = new Uint8Array(wasm.memory.buffer);
     }
     return cachedUint8ArrayMemory0;
+}
+
+function passArray32ToWasm0(arg, malloc) {
+    const ptr = malloc(arg.length * 4, 4) >>> 0;
+    getUint32ArrayMemory0().set(arg, ptr / 4);
+    WASM_VECTOR_LEN = arg.length;
+    return ptr;
 }
 
 function passStringToWasm0(arg, malloc, realloc) {
@@ -198,6 +269,7 @@ function __wbg_finalize_init(instance, module) {
     wasm = instance.exports;
     wasmModule = module;
     cachedDataViewMemory0 = null;
+    cachedUint32ArrayMemory0 = null;
     cachedUint8ArrayMemory0 = null;
     wasm.__wbindgen_start();
     return wasm;

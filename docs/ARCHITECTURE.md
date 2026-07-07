@@ -1,144 +1,180 @@
 # 架构说明(ARCHITECTURE)
 
-本文说明 shengsheng-poker 当前的工程架构、模块边界、数据流、构建/发布边界,
-以及未来 Go 后台服务的接入方式。目标读者是要在本仓库上继续开发或部署的工程师。
+shengsheng-poker 的架构权威文档。目标产品是 **GTO 训练 + 牌谱复盘平台**,建立在
+vendored 的两人翻后 GTO 引擎之上。读者是要在本仓库继续开发的工程师与 AI agent。
 
-> 本文只描述工程结构与技术取舍的**事实依据**(内存、耗时、许可证等硬约束),
-> 不涉及界面视觉主题,也不做"是否需要后端"这类立场性宣传。
-> 路线图(可分阶段搭建的工程能力)见 [ENGINEERING_ROADMAP.md](./ENGINEERING_ROADMAP.md)。
+- 本文只**描述架构与边界并指向代码**,不复制类型/接口定义。契约的单一事实源在代码里:
+  领域模型 `frontend/src/domain/types.js`、策略接口 `frontend/src/domain/policy/gtoPolicy.js`、
+  评估 `frontend/src/domain/eval/deviationEvaluator.js`、引擎会话 `solver-wasm/src/lib.rs`。
+- 阶段划分见 [ENGINEERING_ROADMAP.md](./ENGINEERING_ROADMAP.md);运行/构建见 [根 README](../README.md);
+  给 AI 的工作约定见 [CLAUDE.md](../CLAUDE.md)。四文档职责不重叠、互相引用而非粘贴。
 
-## 1. 分层概览
+---
 
-当前是一个多语言 monorepo,自下而上分三层,外加规划中的第四层:
+## 1. 分层总览
+
+自上而下的层。**领域模型 / 策略服务 / 评估引擎是训练与复盘的公共地基;训练与复盘只是它
+上面的两个前端形态。求解引擎在底层;后端是 P4 预留的触发式可选层。**
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│ frontend/            Vue 3 + Vite 前端(UI + Web Worker)     │
-│   src/solver.worker.js   ── Comlink 包装,在 Worker 内跑 WASM │
-│   src/wasm/solver/       ── 已提交的 WASM 产物(开箱即用)    │
-├─────────────────────────────────────────────────────────────┤
-│ solver-wasm/         wasm-bindgen 接口层(Rust → WASM)       │
-│   src/lib.rs             ── 导出 solve_spot(...);单线程 wasm │
-├─────────────────────────────────────────────────────────────┤
-│ postflop-solver/     vendored Rust GTO 引擎(上游二开,AGPL) │
-│   b-inary/postflop-solver;CFR 求解、动作树、范围解析等       │
-├─────────────────────────────────────────────────────────────┤
-│ backend/  (规划中)  Go 后台服务:承接重局面求解 / 持久化      │
-└─────────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────────────┐
+│ 前端应用   SolverView(现状) · Trainer(实战对局) · Review(牌谱复盘)          │
+│            共享 UI:StrategyGrid + lib/strategy.js(actionColor/13×13)/Card   │
+├────────────────────────────────────────────────────────────────────────────┤
+│ 评估引擎   DeviationEvaluator:实选 vs GTO → EV 损失 + 频率偏差 + 严重度 + 支撑集 │
+│   frontend/src/domain/eval/                        (训练/复盘同一实现,零求解)│
+├────────────────────────────────────────────────────────────────────────────┤
+│ 策略服务   GtoPolicy.query(node) → NodeStrategy                               │
+│   frontend/src/domain/policy/    翻前 PreflopChartPolicy(查表)              │
+│                                  翻后 PostflopSolverPolicy(引擎会话)         │
+├────────────────────────────────────────────────────────────────────────────┤
+│ 领域模型   Hand = {setup, actionLog, boardLog} ──纯 reduce──► GameState        │
+│   frontend/src/domain/           ──派生──► DecisionNode + RangeAssignment      │
+├────────────────────────────────────────────────────────────────────────────┤
+│ 求解引擎   solver-wasm 会话 API:open_spot / query_node(path) / close_spot     │
+│   solver-wasm/src/lib.rs         旧 solve_spot = open+query(root)+close 薄包装 │
+│   └── postflop-solver(vendored, AGPL):CFR 求解 + apply_history 树导航         │
+├────────────────────────────────────────────────────────────────────────────┤
+│ 后端(P4 预留,命中触发器才引入)  重局面多线程求解 / 共享缓存 / 持久化 / 队列  │
+└────────────────────────────────────────────────────────────────────────────┘
 ```
 
 上游引擎 `postflop-solver/` 来自 [b-inary/postflop-solver](https://github.com/b-inary/postflop-solver),
-以 AGPL-3.0 发布;本仓库作为其衍生作品同样受 AGPL-3.0 约束(见根 [LICENSE](../LICENSE))。
+以 AGPL-3.0 发布;本仓库作为衍生作品同样受 AGPL-3.0 约束(见根 [LICENSE](../LICENSE))。
 
-## 2. 模块边界与职责
+| 层 | 落地位置 | 职责 | 边界(不做什么) |
+|---|---|---|---|
+| 领域模型 | `frontend/src/domain/` | `Hand`/`GameState` reducer、`DecisionNode` 派生、`RangeAssignment` | 不含 GTO 计算;不感知 UI;不双持久化派生态 |
+| 策略服务 | `frontend/src/domain/policy/` | `GtoPolicy.query(node)` 统一接口 + 翻前表/翻后会话两实现 | 不建 UI;不做偏差判定(交给评估层) |
+| 评估引擎 | `frontend/src/domain/eval/` | `DeviationEvaluator`(EV 损失/严重度/支撑集) | 不求解(只读 NodeStrategy) |
+| 求解引擎 | `solver-wasm/` + `postflop-solver/` | 有状态会话:solved game 常驻 Worker,按 path 导航读值 | 不含领域语义(动作日志→history 映射在领域层) |
+| 前端应用 | `frontend/src/components/{train,review}/` + `lib/strategy.js` | Trainer / Review 两壳 + 共享 StrategyGrid | 不做求解(委托引擎);不各写一套评估 |
+| 后端 | `backend/`(P4 后新增) | 重求解 / 共享缓存 / 持久化 / 批量队列 | 复用同一契约,不另造数据结构 |
 
-| 模块 | 语言/工具链 | 职责 | 边界(不做什么) | 构建产物 |
-|------|-------------|------|------------------|----------|
-| `postflop-solver/` | Rust(cargo) | GTO 求解算法:CFR、动作树、范围/牌面解析、EV/equity 计算 | 不感知前端、不含 WASM/JS 绑定;尽量保持与上游可对齐 | `target/`(不提交) |
-| `solver-wasm/` | Rust + wasm-bindgen(wasm-pack) | 把引擎能力收敛成**一个稳定入口** `solve_spot(...)`,负责入参解析、内存护栏、结果序列化为 JSON | 不含 UI 逻辑;不引入多线程(wasm 单线程,禁用引擎 `rayon`/`bincode` 默认 feature) | `frontend/src/wasm/solver/`(**已提交**) |
-| `frontend/` | Vue 3 + Vite(npm) | 局面输入、调用 Worker、渲染 13×13 策略网格与整体频率 | 不做求解计算(全部委托给 WASM);不直接 import 引擎 Rust | `frontend/dist/`(不提交) |
-| `backend/`(规划) | Go | 承接超出浏览器内存/耗时预算的重局面;可选持久化与缓存 | 复用同一求解契约,不另造一套数据结构 | 二进制(不提交) |
+## 2. 训练形态:真实实战对局
 
-关键约束(来自代码,作为边界的事实依据,而非取舍宣传):
+训练不是决策题,而是**打完整一手**,翻前+翻后都有 GTO 反馈:
 
-- **单线程 wasm**:`solver-wasm` 关闭引擎默认 feature(`rayon`/`bincode`),浏览器内单线程求解。
-- **内存护栏**:`solve_spot` 预估未压缩内存超过 **800 MB** 即直接报错,避免大局面把浏览器 OOM。
-- **耗时特征**:flop 起手的完整求解在单线程下约 30–45s;turn/river 起手通常亚秒级。
-  这条是后续把重局面下沉到 `backend/`(可开 `rayon` 多线程)的主要动因。
+- **9 人桌翻前**:真实位置博弈,bot 按范围表行动,hero 参与真实翻前决策。
+- **翻后收敛两人才进入翻后 GTO 训练**:当翻牌只剩 hero + 1 人时才对翻后 solve;
+  multiway(翻后仍多人)的手自然被过滤,因为多人翻后没有 GTO(见 §4)。
+- bot **开局锁定一手具体牌**全程行动(线路自洽、可 showdown,分布仍取自 GTO/范围)。
 
-## 3. 数据流
+## 3. 两大需求共享同一地基
 
-一次求解的端到端路径:
+训练与复盘是**同一时间轴上的写 / 读两端**——"实时对局就是正在被书写的复盘"。整套系统
+只有两条接缝:①被选动作来源(实时输入/bot 采样 vs 日志历史);②遍历方式(追加日志后
+cursor 自增 vs 在预填日志上任意跳点)。主循环对两者统一:
 
 ```
-SolverView.vue (reactive cfg)
-    │  { oop, ip, board→flop/turn/river, pot, stack, bet, maxIter, targetExpl }
-    ▼  Comlink.wrap(new Worker(solver.worker.js))
-solver.worker.js
-    │  init() 一次性加载 wasm(--target web 必须先 await init)
-    ▼  solve_spot(oop, ip, flop, turn, river, pot, stack, bet, maxIter, targetExpl)
-solver-wasm/src/lib.rs
-    │  解析范围/牌面 → 建 TreeConfig/ActionTree → 内存护栏 → allocate → solve(CFR)
-    ▼  serde_json::to_string(SolveResult)   // 返回 JSON 字符串
-solver.worker.js
-    │  JSON.parse(json)
-    ▼
-SolverView.vue  渲染:每手动作分布(13×13)、整体动作频率、exploitability
+训练(写):setup 给定,actionLog 从空增长
+  deriveDecisionNode(state) → GtoPolicy.query(node) → bot 采样 / hero 输入
+      → DeviationEvaluator(chosen, gto) → 即时反馈 → actionLog.push → cursor++
+
+复盘(读):解析牌谱预填 setup+actionLog+boardLog,cursor 任意移动
+  设/移 cursor → reduce(log[..cursor]) → deriveDecisionNode → GtoPolicy.query(node)
+      → DeviationEvaluator(logAction, gto) → 逐点标注偏差 / EV 损失
+
+统一:node → policy.query → chosen → evaluator → append_or_advance
 ```
 
-- Worker 边界:求解是一次**阻塞**调用,放在 Web Worker 里执行,不阻塞主线程 UI;
-  Rust `panic` 经 `console_error_panic_hook` 进入浏览器 console,`Err` 作为异常被主线程 `catch`。
-- 参数语义:`targetExpl` 单位为 **% of pot**(如 `0.5` = 底池的 0.5%);
-  `turn`/`river` 传空串表示该街未发,起始街由牌面推断。
+因此领域模型、策略服务、评估引擎三层被两个前端形态原样复用,类型契约见 `types.js`
+的不变式注释(`Hand`/`GameState`/`DecisionNode`)。**翻前/翻后不在主循环分叉**——两者
+都只是"某玩家必须选择"的 `DecisionNode`,差异被 `GtoPolicy` 藏起来。
 
-## 4. 数据契约(跨语言边界)
+## 4. 策略分层与理论边界
 
-前端与引擎之间只有**一个契约**,即 `solve_spot` 的入参签名与 `SolveResult` 出参结构。
-这是最需要保持稳定、也是目前最薄弱的一环。
+`GtoPolicy` 是统一接口:主循环只调 `policy.query(node)`,不按街 if/else。两个实现对应
+理论边界的两侧:
 
-**出参 `SolveResult`(定义见 `solver-wasm/src/lib.rs`):**
+| | 翻前 | 翻后 |
+|---|---|---|
+| 实现 | `PreflopChartPolicy` | `PostflopSolverPolicy` |
+| 机制 | 查固定范围表(静态数据,毫秒级,无算力问题) | 引擎 solve 一次 + 树内导航 |
+| 精度 | 多人**近似**标准范围(查表够用),`approximate=true` | 两人**精确** GTO,`approximate=false` |
+| 数据 | P0 用内置简化/占位范围(结构正确即可,来源完善为 TODO) | vendored CFR 引擎 |
 
-| 字段 | 类型 | 含义 |
-|------|------|------|
-| `exploitability` | f32 | 收敛后的可利用度 |
-| `memory_bytes` | f64 | 本次求解的未压缩内存占用 |
-| `num_hands` / `num_actions` | usize | 手牌数 / 动作数 |
-| `actions` | string[] | 动作标签,如 `["Check", "Bet(28)", "AllIn(100)"]` |
-| `hands` | string[] | 手牌标签,长度 `num_hands` |
-| `strategy` | f32[] | 长度 `num_actions * num_hands`,`strategy[a*num_hands + h]` = 手牌 h 选动作 a 的概率 |
-| `equity` / `ev` / `weights` | f32[] | 各长度 `num_hands` |
-| `overall_freq` | f32[] | 长度 `num_actions`,按权重加权的整体动作频率 |
+**理论边界(为什么这样设计,非本引擎短板而是全行业边界):**
 
-**当前的契约缺口(工程债,已在路线图中登记):**
+- **两人翻后有精确 GTO** → 引擎 `current_player() ∈ {0=OOP, 1=IP}`,可求解不可剥削策略。
+- **多人翻后无 GTO** → 三人及以上无唯一均衡解(全行业边界),故 multiway 手在翻后被过滤,
+  不让 GTO 反馈假装权威。
+- **翻前多人有近似标准范围** → 无精确解但有业界公认范围表,查表足够,标注为近似对照。
 
-- `solve_spot` 的 TS 返回类型是 `string`(JSON),因此 `SolveResult` 的形状在 TS 侧**没有类型**,
-  前端 `JSON.parse` 后按约定裸取字段。Rust 结构体一旦改字段,前端不会在编译期报错。
-- 入参是 10 个位置参数(`solver.worker.js` 里手工按序传入),新增/调整参数容易错位。
+翻前表输出的**续牌范围**正是翻后 solve 的 `oopRange/ipRange` 入参来源(`RangeAssignment`),
+这是两个策略提供者之间的数据接缝,必须显式挂在 GameState 上、UI 可见、用户可覆盖。
 
-改进方向(把契约变成单一事实源、生成而非手写)见
-[ENGINEERING_ROADMAP.md](./ENGINEERING_ROADMAP.md) 的"共享 API/Schema"条目。
+## 5. 关键杠杆:一次 solve 覆盖整条街
 
-## 5. 构建与发布边界
+引擎最反直觉、也最高价值的能力:`solve()` 一次后,内部已含该街之后**所有** turn/river
+发牌(chance 节点)与全部行动线;`cache_normalized_weights()` 后用 `back_to_root()` /
+`apply_history(&[usize])` / `play(idx)` 可跳到任意节点,读 `available_actions()` /
+`strategy()` / `expected_values(p)` / `equity(p)`。导航是切片读取,微秒~低毫秒级。
 
-统一入口是根 `Makefile`(见 [根 README](../README.md#常用命令) 与 `make help`)。
+> **推论:一手翻后的全部决策点 = 1 次 solve + N 次近乎免费的 query**,而非 N 次 solve。
+
+据此 `solve_spot` 升级为**会话 API**(契约与语义定义见 `solver-wasm/src/lib.rs` 与
+`types.js` 头部注释):
+
+- `open_spot(req) → handle`:建局 + 内存护栏 + CFR 求解一次,solved game 留在 Worker(唯一的重活)。
+- `query_node(handle, path) → NodeResult`:沿 path 导航到目标节点读值,纯读取,可反复调用。
+- `close_spot(handle)`:释放常驻 game。
+- 旧 `solve_spot` 降为 `open + query(root) + close` 的薄包装,**向后兼容,SolverView 零改动**。
+
+`PostflopSolverPolicy` 据此把整手翻后摊到 1 次求解:同一 spot 的不同 `NodePath` 复用同一
+handle。spot 身份(缓存键)= `(oopRange, ipRange, board, 该街起始底池, 有效筹码, betTree)`。
+
+## 6. 引擎硬约束(一切取舍的事实依据)
+
+均来自代码勘察,是层与形态选择的物理边界:
+
+- **单线程 wasm**:`solver-wasm` 关闭引擎默认 feature(`rayon`/`bincode`),浏览器内单线程。
+- **内存护栏**:`open_spot`/`solve_spot` 预估未压缩内存 > **800 MB** 即报错,防浏览器 OOM。
+- **成本分布极不均匀**:flop 起手 solve 单线程约 **30–45s**(唯一重活);turn 起手亚秒、
+  river 起手几十毫秒;树内导航微秒级。**本期不优化性能**:MVP 翻后先支持能快速 solve 的
+  场景(turn/river 起手,亚秒级);任意 flop 起手的实时训练是已知坎,留到 P4 后端。
+- **翻前查表无算力问题**,不受上述约束。
+
+## 7. 契约(单一事实源在代码里)
+
+跨层/跨语言的契约只在代码定义一次,本文只指向:
+
+| 契约 | 定义位置 | 内容 |
+|---|---|---|
+| 领域模型类型 | `frontend/src/domain/types.js` | `Card`/`Position`/`Street`/`Player`/`Blinds`/`DomainAction`/`HandSetup`/`Hand`/`GameState`/`DecisionNode`/`LegalAction`/`RangeAssignment`/`NodeStrategy` 等 @typedef,及 `GameState=reduce(setup,actionLog,boardLog)` 不变式 |
+| 会话 API | `solver-wasm/src/lib.rs` + `types.js` 头注 | `open_spot(req)→handle` / `query_node(handle,path)→NodeResult` / `close_spot(handle)` 签名与语义 |
+| 策略接口 | `frontend/src/domain/policy/gtoPolicy.js` | `GtoPolicy.query(node)→NodeStrategy`;`PreflopChartPolicy`/`PostflopSolverPolicy`/`CompositeGtoPolicy` |
+| 评估契约 | `frontend/src/domain/eval/deviationEvaluator.js` | `DeviationEvaluator.evaluate(chosen,gto,node)→DeviationResult`;`Severity` 分档 |
+
+## 8. 构建与发布边界
+
+统一入口是根 `Makefile`(见 [根 README](../README.md) 与 `make help`)。
 
 | 阶段 | 命令 | 输入 → 输出 | 是否提交 |
-|------|------|-------------|----------|
+|---|---|---|---|
 | 编译引擎为 WASM | `make build-wasm` | `solver-wasm/` →(wasm-pack)→ `frontend/src/wasm/solver/` | 输出**已提交** |
 | 打包前端 | `make build-frontend` | `frontend/` →(vite build)→ `frontend/dist/` | 不提交 |
 | 完整构建 | `make build` | 先 WASM 后前端 | — |
 
-- **WASM 产物已提交**:因此在缺少 Rust 工具链(cargo/wasm-pack)的环境也能只跑前端;
-  只有改动 `postflop-solver/` 或 `solver-wasm/` 后才需 `make build-wasm` 重新生成。
-- **前端发布物**:`frontend/dist/` 是纯静态资源,可部署到任意静态托管。
-- **许可证义务**:作为网络服务对外提供时,AGPL-3.0 要求向使用者提供完整对应源码(含本仓库改动)。
-  部署与发布流程都应保留这一义务,详见根 README 的 License 一节。
+- **WASM 产物已提交**:缺 Rust 工具链也能只跑前端;仅改 `postflop-solver/` 或 `solver-wasm/`
+  后才需 `make build-wasm` 重新生成。
+- **AGPL 义务**:作为网络服务对外提供时须向使用者提供完整对应源码(含本仓库改动)。
 
-## 6. 推荐目标架构
+## 9. 演进路径
 
-近期目标不是重构,而是把现有边界**补齐工程能力**(契约、CI、质量门禁),
-并为重局面预留一个可选的计算层。要点:
+阶段总览如下,每阶段的落地文件与验收见 [ENGINEERING_ROADMAP.md](./ENGINEERING_ROADMAP.md)。
 
-1. **契约单一事实源**:把 `solve_spot` 入参与 `SolveResult` 出参抽成一份 schema(如 JSON Schema),
-   由它生成 TS 类型与(未来)Go 结构体,消除第 4 节的漂移风险。
-2. **质量门禁进 CI**:前端构建校验 + Rust `test`/`fmt`/`clippy`(工具链就绪时)在 PR 上自动跑。
-3. **可选计算层 `backend/`**:把超出浏览器预算(内存 > 800MB / flop 全解 30–45s)的局面下沉到 Go 后台,
-   后台内部可复用同一 Rust 引擎并开启 `rayon` 多线程;前端按局面规模选择"浏览器内解"或"请求后台解"。
+| 阶段 | 内容 | 里程碑 |
+|---|---|---|
+| **P0 · 共享地基**(本期) | 领域模型(`types.js` + reducer/派生);会话 API 改造(`solve_spot`→`open/query/close`,旧接口薄包装);`GtoPolicy` 接口 + `PostflopSolverPolicy`;`DeviationEvaluator`;从 SolverView 抽 `StrategyGrid` + `lib/strategy.js` | 会话 API 能"解一次、导航任意节点读 strategy/EV";SolverView 零改动仍可用;评估器在一个 turn 局面上算出 EV 损失 |
+| **P1 · 训练** | Trainer:9 人桌翻前(bot 按范围表)+ 翻后收敛两人进入 GTO 训练;`PreflopChartPolicy`(先内置占位范围);`PlayerActionBar` + `DecisionFeedback`;showdown 结算;弱点统计 | 打完整一手 heads-up 对局,翻前+翻后逐点得 GTO 反馈(EV 损失/频率/严重度);multiway 手诚实标注不可训练 |
+| **P2 · 复盘** | 牌谱 parser(可插拔 registry)+ 手动输入;范围重建(内置翻前图);回放/导入/报告 UI;IndexedDB 存牌谱与解缓存 | 导入牌谱→逐街回放→每个 hero 决策点标注偏差/EV 损失 + 整手报告;不可复盘手显式标 reason |
+| **P3 · 闭环** | 跨手漏洞聚合(按街/动作/局面聚合 EV 损失)→ leak finder;靶向选题反哺训练 | 复盘发现的漏洞自动进训练选题,形成"练→复盘→再练"闭环 |
+| **P4 · 后端**(命中触发器才启动) | 倾向 Rust axum:重局面 rayon 求解、规范化 spot 共享缓存(bincode+zstd)、批量复盘队列、可选牌谱持久化;前端按局面规模路由"浏览器内解/请求后端" | 任意 flop 起手实时训练降到数秒;canonical spot 全网解一次复用;AGPL 源码义务落实 |
 
-保持不变的边界:引擎算法只在 Rust 层;前端不做求解;所有服务共用根 `Makefile` 与同一份契约。
+**P4 触发器(命中任一才上后端,否则纯前端够用)**:① 任意 flop 起手的**实时**训练
+(40s 单线程不可接受);② 跨用户共享预计算缓存;③ 牌谱持久化 / 多设备 / 账号;
+④ 富动作树内存破 800MB 护栏;⑤ 批量复盘吞吐(队列而非每浏览器各磨 40s)。
 
-## 7. 未来 Go 后台接入方式
-
-规划中的 `backend/`(Go)按以下约定接入,避免另起炉灶:
-
-- **目录**:新增 `backend/`,Go 源码与 `go.mod` 提交;二进制/覆盖率产物由根 `.gitignore` 忽略
-  (已预置 `backend/bin/`、`*.test`、`*.out` 等规则)。
-- **构建入口**:在根 `Makefile` 扩展 target(如 `build-backend`、`test-go`),
-  并接进 `build`/`test` 聚合目标,**不新增散落脚本**。
-- **数据契约**:HTTP/JSON 接口的请求/响应直接对齐 `SolveResult`(见第 4 节),
-  与 WASM 路径共用同一 schema,前端调用两条路径时数据结构一致。
-- **计算复用**:后台可直接依赖 `postflop-solver/`(开启 `rayon`/`bincode` 默认 feature)获得多线程与序列化,
-  无需重写算法。
-- **许可证**:后台作为网络服务同样受 AGPL-3.0 约束,须提供对应源码。
-
-落地顺序与验收标准见 [ENGINEERING_ROADMAP.md](./ENGINEERING_ROADMAP.md)。
+后端语言倾向 **Rust axum**(直接复用 `postflop-solver` 的 default features:rayon 多线程 +
+bincode 序列化,零 FFI),而非路线图早期默认的 Go——先决策语言再动工,避免返工。

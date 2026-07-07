@@ -1,8 +1,11 @@
 /* tslint:disable */
 /* eslint-disable */
 export const memory: WebAssembly.Memory;
+export const open_spot: (a: number, b: number) => [number, number, number];
+export const query_node: (a: number, b: number, c: number) => [number, number, number, number];
 export const solve_spot: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number, l: number, m: number, n: number, o: number, p: number) => [number, number, number, number];
 export const on_start: () => void;
+export const close_spot: (a: number) => void;
 export const __wbindgen_free: (a: number, b: number, c: number) => void;
 export const __wbindgen_malloc: (a: number, b: number) => number;
 export const __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
