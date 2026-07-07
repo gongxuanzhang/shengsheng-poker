@@ -2,25 +2,22 @@
 import { computed } from 'vue'
 import Card from '../Card.vue'
 
-// 军绿牌桌:渲染 TrainingSession.getViewState()。9 座位绕椭圆,hero 固定底部中央。
+// 军绿牌桌:渲染 TrainingSession.getViewState()。标准 6-max,6 座位绕椭圆,hero 固定底部中央。
 const props = defineProps({
   view: { type: Object, default: null },
 })
 
 // 物理顺时针座位环(与 domain/positions.js 的 CLOCKWISE 对齐):SB 紧跟按钮,BTN 最后行动。
-const RING = ['SB', 'BB', 'UTG', 'UTG1', 'UTG2', 'LJ', 'HJ', 'CO', 'BTN']
+const RING = ['SB', 'BB', 'UTG', 'MP', 'CO', 'BTN']
 
-// 9 个椭圆槽位(容器百分比坐标),槽 0 = 底部中央(hero),顺时针一圈。
+// 6 个椭圆槽位(容器百分比坐标),槽 0 = 底部中央(hero),顺时针均布一圈。
 const SLOTS = [
   { left: 50, top: 90 }, // 0 底部中央 = hero
-  { left: 19, top: 84 }, // 1
-  { left: 5, top: 57 }, // 2
-  { left: 11, top: 27 }, // 3
-  { left: 33, top: 11 }, // 4
-  { left: 67, top: 11 }, // 5
-  { left: 89, top: 27 }, // 6
-  { left: 95, top: 57 }, // 7
-  { left: 81, top: 84 }, // 8
+  { left: 10, top: 66 }, // 1 左下
+  { left: 15, top: 22 }, // 2 左上
+  { left: 50, top: 9 }, // 3 顶部中央
+  { left: 85, top: 22 }, // 4 右上
+  { left: 90, top: 66 }, // 5 右下
 ]
 
 const heroPos = computed(() => {

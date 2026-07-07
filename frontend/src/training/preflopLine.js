@@ -29,6 +29,19 @@ export function lastPreflopAggressor(actionLog) {
 }
 
 /**
+ * 当前决策点面对的对手位(vs-open 的开池者 / vs-3bet 的 3bet 者位置),供 hero×villain 双维查表。
+ * = 最后一个抬注者的位置。folded-to-hero(无抬注)时无对手位,返回 undefined。
+ * @param {import('../domain/types.js').HandSetup} setup
+ * @param {import('../domain/types.js').DomainAction[]} actionLog
+ * @returns {string|undefined}
+ */
+export function preflopVillain(setup, actionLog) {
+  const aggId = lastPreflopAggressor(actionLog)
+  if (!aggId) return undefined
+  return setup.players.find((p) => p.id === aggId)?.position
+}
+
+/**
  * 某玩家当前决策点的翻前动作线('rfi'|'bbOption'|'vsRfi'|'vs3bet')。
  * actionLog 为「至此为止」的历史,故其加注数正是该玩家面对的加注轮数。
  * @param {import('../domain/types.js').DomainAction[]} actionLog
@@ -57,17 +70,23 @@ export function deriveContinuation(setup, actionLog, oopId, ipId) {
   const raises = preflopRaiseCount(actionLog)
   const aggressorId = lastPreflopAggressor(actionLog)
 
-  const forId = (id) => {
+  // 双维续牌范围:HU 里每一方的对手位就是另一方的位置。
+  const forId = (id, otherId) => {
     const position = posOf[id]
+    const villain = posOf[otherId]
     const isAgg = id === aggressorId
     if (raises >= 2) {
-      return { position, line: isAgg ? 'vsRfi' : 'vs3bet', action: isAgg ? 'threebet' : 'call' }
+      return isAgg
+        ? { position, line: 'vsRfi', action: 'threebet', villain } // 3bet 者:对开池者 3bet
+        : { position, line: 'vs3bet', action: 'call', villain } // 开池者:面 3bet 跟注
     }
     if (raises === 1) {
-      return { position, line: isAgg ? 'rfi' : 'vsRfi', action: isAgg ? 'open' : 'call' }
+      return isAgg
+        ? { position, line: 'rfi', action: 'open', villain } // 开池者:RFI(不看对手位)
+        : { position, line: 'vsRfi', action: 'call', villain } // 跟注者:对开池者跟注
     }
-    return { position, line: 'rfi', action: 'open' } // limp/check 池近似
+    return { position, line: 'rfi', action: 'open', villain } // limp/check 池近似
   }
 
-  return { oop: forId(oopId), ip: forId(ipId) }
+  return { oop: forId(oopId, ipId), ip: forId(ipId, oopId) }
 }

@@ -86,15 +86,17 @@ export class PreflopChartPolicy extends GtoPolicy {
       );
     }
     const line = this._resolveLine(node, position);
+    const villain = this._resolveVillain(node);
     const handKey = canonicalHand(holeCards[0], holeCards[1]);
-    const bucketFreqs = this.lookup(position, line, handKey);
+    // 双维索引:vs-open/vs-3bet 用 hero×villain 查表(A7s SB 对 BTN=3bet、对 UTG=fold);rfi 忽略 villain。
+    const bucketFreqs = this.lookup(position, line, handKey, villain);
     const actions = this._mapToLegalActions(node.legalActions || [], bucketFreqs);
     return {
       street: 'preflop',
       actions,
       source: 'preflop-chart',
       approximate: true,
-      raw: { position, line, handKey, bucketFreqs },
+      raw: { position, line, villain, handKey, bucketFreqs },
     };
   }
 
@@ -173,6 +175,24 @@ export class PreflopChartPolicy extends GtoPolicy {
     if (raises === 0) return position === 'BB' ? 'bbOption' : 'rfi';
     if (raises === 1) return 'vsRfi';
     return 'vs3bet';
+  }
+
+  /**
+   * 对手位(vs-open/vs-3bet 的开池者/3bet 者位置),驱动 hero×villain 双维查表。
+   * 优先取训练编排预推导的 node.villain(见 preflopLine.preflopVillain);缺失时回退:
+   * 从 node.state 里唯一在手的非行动方推断(HU 场景常见),再不行返回 undefined,由查表层取代表对位。
+   */
+  _resolveVillain(node) {
+    if (node.villain) return node.villain;
+    const st = node.state;
+    if (st?.players && st.activePlayers) {
+      const others = st.activePlayers.filter((id) => id !== node.playerId);
+      if (others.length === 1) {
+        const ps = st.players.find((p) => p.id === others[0]);
+        if (ps?.position) return ps.position;
+      }
+    }
+    return undefined;
   }
 
   /**

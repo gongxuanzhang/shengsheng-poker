@@ -8,11 +8,11 @@ import {
   postflopRoleIndex,
 } from '../positions.js';
 
-const ring9 = ['UTG', 'UTG1', 'UTG2', 'LJ', 'HJ', 'CO', 'BTN', 'SB', 'BB'];
+const ring6 = ['UTG', 'MP', 'CO', 'BTN', 'SB', 'BB'];
 
-function setup9() {
+function setup6() {
   return {
-    players: ring9.map((pos) => ({ id: pos.toLowerCase(), position: pos, stack: 200 })),
+    players: ring6.map((pos) => ({ id: pos.toLowerCase(), position: pos, stack: 200 })),
     blinds: { sb: 1, bb: 2 },
     buttonPosition: 'BTN',
     heroId: 'bb',
@@ -32,17 +32,17 @@ function setupHU() {
   };
 }
 
-test('满座翻前顺序:UTG 先动,BB 最后', () => {
+test('满座翻前顺序(6-max):UTG 先动,BB 最后', () => {
   assert.deepEqual(
-    preflopOrderIds(setup9()),
-    ['utg', 'utg1', 'utg2', 'lj', 'hj', 'co', 'btn', 'sb', 'bb'],
+    preflopOrderIds(setup6()),
+    ['utg', 'mp', 'co', 'btn', 'sb', 'bb'],
   );
 });
 
-test('满座翻后顺序:SB 先动,BTN 最后', () => {
+test('满座翻后顺序(6-max):SB 先动,BTN 最后', () => {
   assert.deepEqual(
-    postflopOrderIds(setup9()),
-    ['sb', 'bb', 'utg', 'utg1', 'utg2', 'lj', 'hj', 'co', 'btn'],
+    postflopOrderIds(setup6()),
+    ['sb', 'bb', 'utg', 'mp', 'co', 'btn'],
   );
 });
 
@@ -56,7 +56,7 @@ test('orderAfter 锚点自身排最后', () => {
 });
 
 test('OOP/IP:翻后先行动者为 OOP', () => {
-  const s = setup9();
+  const s = setup6();
   // BB 比 BTN 早行动(翻后)=> BB 为 OOP
   assert.deepEqual(oopIpIds(['btn', 'bb'], s), { oopId: 'bb', ipId: 'btn' });
   assert.ok(postflopRoleIndex('BB', 'BTN') < postflopRoleIndex('BTN', 'BTN'));

@@ -48,8 +48,8 @@
  */
 
 /**
- * 9 人桌位置。按行动顺序(翻前)自 UTG 起。
- * @typedef {('UTG'|'UTG1'|'UTG2'|'LJ'|'HJ'|'CO'|'BTN'|'SB'|'BB')} Position
+ * 标准 6-max 位置。按行动顺序(翻前)自 UTG 起。
+ * @typedef {('UTG'|'MP'|'CO'|'BTN'|'SB'|'BB')} Position
  */
 
 /**
@@ -76,7 +76,7 @@
  * 一名玩家的开局配置(不含随对局变化的派生态,如剩余筹码由 reduce 计算)。
  * @typedef {Object} Player
  * @property {string}   id        席位唯一 id
- * @property {Position} position  9 人桌位置
+ * @property {Position} position  6-max 位置
  * @property {number}   stack     开局筹码(有效筹码由 setup/派生态给出)
  * @property {[Card,Card]} [holeCards] 底牌;bot 开局锁定一手具体牌全程行动(线路自洽、可 showdown)
  * @property {boolean}  isHero    是否为训练/复盘的主角
@@ -86,7 +86,7 @@
 /**
  * 一手牌的开局设置 —— Hand 三要素之一,静态不变。
  * @typedef {Object} HandSetup
- * @property {Player[]} players         9 人桌全体(multiway 手在翻后收敛两人前不进入 GTO 训练)
+ * @property {Player[]} players         6-max 全体(multiway 手在翻后收敛两人前不进入 GTO 训练)
  * @property {Blinds}   blinds
  * @property {Position} buttonPosition  按钮位
  * @property {string}   heroId          主角 player id

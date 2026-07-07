@@ -84,8 +84,32 @@ test('lookupHandFreqs: rfi 命中开池=纯 raise,未命中=纯 fold', () => {
 })
 
 test('lookupHandFreqs: vsRfi 命中 call 范围=纯 call', () => {
-  const f = lookupHandFreqs('UTG1', 'vsRfi', 'KQo') // _default.call 含 KQo
+  const f = lookupHandFreqs('BB', 'vsRfi', 'KQo', 'BTN') // BB 面对 BTN 开池以 KQo 纯跟注(真实数据)
   assert.deepEqual(f, { raise: 0, call: 1, check: 0, fold: 0 })
+})
+
+// ═══════════════════════════ 对手位维度(hero×villain 双维索引) ═══════════════════════════
+
+test('lookupHandFreqs: A7s 小盲对 BTN 开池 = 3bet(raise),对 UTG 开池 = fold(对手位细分生效)', () => {
+  const vsBtn = lookupHandFreqs('SB', 'vsRfi', 'A7s', 'BTN')
+  assert.equal(vsBtn.raise, 1) // 对宽开的 BTN,A7s 3bet
+  const vsUtg = lookupHandFreqs('SB', 'vsRfi', 'A7s', 'UTG')
+  assert.equal(vsUtg.fold, 1) // 对紧开的 UTG,A7s 弃牌
+})
+
+test('lookupHandFreqs: 缺失 (hero,villain) 组合优雅回退到最近对位,不崩', () => {
+  // CO vs-open 源图只收录 UTG;查 CO vs MP 应回退到最近可得对位(UTG),返回合法分布。
+  const f = lookupHandFreqs('CO', 'vsRfi', 'AA', 'MP')
+  const sum = f.raise + f.call + f.check + f.fold
+  assert.ok(Math.abs(sum - 1) < 1e-9)
+  assert.equal(f.raise, 1) // AA 恒 3bet
+})
+
+test('lookupHandFreqs: rfi 忽略 villain(开池不看对手位)', () => {
+  assert.deepEqual(
+    lookupHandFreqs('UTG', 'rfi', 'AA', 'BTN'),
+    lookupHandFreqs('UTG', 'rfi', 'AA', 'BB'),
+  )
 })
 
 test('lookupHandFreqs: bbOption 未命中加注=纯 check', () => {
@@ -93,8 +117,8 @@ test('lookupHandFreqs: bbOption 未命中加注=纯 check', () => {
   assert.deepEqual(lookupHandFreqs('BB', 'bbOption', 'AA'), { raise: 1, call: 0, check: 0, fold: 0 })
 })
 
-test('lookupHandFreqs: MIXED 混频覆盖优先并归一化', () => {
-  const f = lookupHandFreqs('BTN', 'vsRfi', 'A5s') // MIXED: raise .5 / fold .5
+test('lookupHandFreqs: 混频格(50/50)归一化', () => {
+  const f = lookupHandFreqs('BTN', 'rfi', '85s') // 按钮开池 85s = raise .5 / fold .5(真实数据)
   assert.equal(f.raise, 0.5)
   assert.equal(f.fold, 0.5)
   assert.equal(f.call + f.check, 0)
@@ -143,7 +167,7 @@ test('query: 冷门牌开池 → fold 频率 1', async () => {
 test('query: 频率总和为 1(混频手)', async () => {
   const policy = new PreflopChartPolicy()
   const s = await policy.query(
-    preflopNode({ position: 'BTN', holeCards: ['As', '5s'], line: 'vsRfi', legalActions: [LA.fold, LA.call(2), LA.raise(9)] }),
+    preflopNode({ position: 'BTN', holeCards: ['8s', '5s'], line: 'rfi', legalActions: [LA.fold, LA.call(2), LA.raise(9)] }),
   )
   const total = s.actions.reduce((t, a) => t + a.frequency, 0)
   assert.ok(Math.abs(total - 1) < 1e-9)
@@ -185,13 +209,28 @@ test('query: 从 state.players 解析 position/holeCards(无节点级字段)', a
   assert.equal(s.raw.handKey, 'AA')
 })
 
+test('query: node.villain 驱动对手位细分(A7s SB 对 BTN=3bet、对 UTG=fold)', async () => {
+  const policy = new PreflopChartPolicy()
+  const mk = (villain) => ({
+    playerId: 'hero', isHero: true, street: 'preflop',
+    legalActions: [LA.fold, LA.call(2), LA.raise(9)],
+    state: { street: 'preflop', players: [{ id: 'hero' }] },
+    position: 'SB', holeCards: ['As', '7s'], preflopLine: 'vsRfi', villain,
+  })
+  const vsBtn = await policy.query(mk('BTN'))
+  assert.equal(vsBtn.raw.villain, 'BTN')
+  assert.equal(vsBtn.actions.find((a) => a.type === 'raise').frequency, 1)
+  const vsUtg = await policy.query(mk('UTG'))
+  assert.equal(vsUtg.actions.find((a) => a.type === 'fold').frequency, 1)
+})
+
 // ═══════════════════════════ sampleAction ═══════════════════════════
 
 test('sampleAction: 按频率随机(确定性 rng 覆盖各分支)', async () => {
   const policy = new PreflopChartPolicy()
-  // BTN vsRfi A5s:legalActions [fold, call(0), raise] → 频率 [0.5, 0, 0.5],累积 fold<0.5<=raise
+  // BTN rfi 85s:legalActions [fold, call(0), raise] → 频率 [0.5, 0, 0.5],累积 fold<0.5<=raise
   const node = preflopNode({
-    position: 'BTN', holeCards: ['As', '5s'], line: 'vsRfi',
+    position: 'BTN', holeCards: ['8s', '5s'], line: 'rfi',
     legalActions: [LA.fold, LA.call(2), LA.raise(9)],
   })
   const foldPick = await policy.sampleAction(node, () => 0.2) // 落在 fold 区

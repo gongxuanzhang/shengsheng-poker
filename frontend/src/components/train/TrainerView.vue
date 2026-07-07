@@ -138,7 +138,7 @@ newHand()
   <div class="trainer">
     <header class="t-hero">
       <h1><span class="spade">♠</span> 训练场 · <span class="accent">Heads-Up</span> GTO</h1>
-      <p class="sub">9 人桌翻前查表 · 收敛两人进 <Term id="postflop">后翻牌</Term> 精确 <Term id="gto">GTO</Term> · 每步对照评分</p>
+      <p class="sub">标准 6-max 翻前查表 · 收敛两人进 <Term id="postflop">后翻牌</Term> 精确 <Term id="gto">GTO</Term> · 每步对照评分</p>
     </header>
 
     <!-- 牌桌 -->

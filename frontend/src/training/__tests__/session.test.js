@@ -85,18 +85,18 @@ function makeSession(deps = {}) {
 
 // ═══════════════════════════ 发牌与盲注 ═══════════════════════════
 
-test('newHand:9 座 / 各两张唯一底牌 / 盲注入池 / 按钮与 hero 标记', () => {
+test('newHand:6 座 / 各两张唯一底牌 / 盲注入池 / 按钮与 hero 标记', () => {
   const s = makeSession({ rng: mulberry32(1) })
   s.newHand({ heroPosition: 'BTN', blinds: { sb: 1, bb: 2 } })
   const v = s.getViewState()
-  assert.equal(v.players.length, 9)
+  assert.equal(v.players.length, 6)
   assert.equal(v.heroId, 'BTN')
 
-  // 底牌:hero 可见,bot 隐藏(未摊牌);全部 18 张唯一。
+  // 底牌:hero 可见,bot 隐藏(未摊牌);全部 12 张唯一。
   const heroSeat = v.players.find((p) => p.isHero)
   assert.equal(heroSeat.holeCards.length, 2)
   const all = s.setup.players.flatMap((p) => p.holeCards)
-  assert.equal(new Set(all).size, 18)
+  assert.equal(new Set(all).size, 12)
   assert.equal(v.players.find((p) => !p.isHero).holeCards, undefined)
 
   // 盲注:SB=1,BB=2,pot=3,currentBet=2。

@@ -1,7 +1,7 @@
 /**
  * 座位顺序 / 角色映射工具(纯函数,无状态)。
  *
- * 9 人桌物理顺时针环:按钮(BTN)最后,SB 紧接按钮之后。行动顺序都由该环 + 一个锚点旋转得到:
+ * 标准 6-max 物理顺时针环:按钮(BTN)最后,SB 紧接按钮之后。行动顺序都由该环 + 一个锚点旋转得到:
  *   - 翻前:自 BB 之后的座位起,BB 最后行动(大盲有选择权);
  *   - 翻后:自按钮之后的座位起,按钮最后行动(BTN/IP 位置行动权最晚)。
  * 这一套同时正确覆盖满座与单挑(HU 时按钮=SB):见单元测试。
@@ -9,8 +9,8 @@
  * 位置字符串契约见 ../types.js 的 Position。
  */
 
-/** 物理顺时针座位环:SB 紧跟按钮,BTN 为按钮(最后行动)。 */
-export const CLOCKWISE = ['SB', 'BB', 'UTG', 'UTG1', 'UTG2', 'LJ', 'HJ', 'CO', 'BTN'];
+/** 物理顺时针座位环(6-max):SB 紧跟按钮,BTN 为按钮(最后行动)。 */
+export const CLOCKWISE = ['SB', 'BB', 'UTG', 'MP', 'CO', 'BTN'];
 
 const RING_SIZE = CLOCKWISE.length;
 

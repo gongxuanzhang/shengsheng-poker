@@ -1,6 +1,6 @@
 /**
  * TrainingSession —— 训练对局编排引擎(P1)。把 P0 地基(reducer / decisionNode / policy /
- * evaluator / spot)串成一手可玩流程:9 人桌翻前(bot 按范围表采样)+ 翻后收敛两人才进 GTO。
+ * evaluator / spot)串成一手可玩流程:标准 6-max 翻前(bot 按范围表采样)+ 翻后收敛两人才进 GTO。
  *
  * 设计要点:
  *   · 事实源 Hand = { setup, actionLog, boardLog }。GameState 恒为 reduce 结果,不双持久化。
@@ -29,13 +29,13 @@ import {
 } from '../domain/index.js'
 import { dealHand } from './deck.js'
 import { settle } from './settlement.js'
-import { computePreflopLine, deriveContinuation } from './preflopLine.js'
+import { computePreflopLine, deriveContinuation, preflopVillain } from './preflopLine.js'
 
 const STREET_IDX = { preflop: 0, flop: 1, turn: 2, river: 3 }
 const BOARD_COUNT = [0, 3, 4, 5]
 
-/** 9 人桌位置环(翻前行动序);buttonPosition 固定为 'BTN'。 */
-const NINE_MAX_POSITIONS = ['UTG', 'UTG1', 'UTG2', 'LJ', 'HJ', 'CO', 'BTN', 'SB', 'BB']
+/** 标准 6-max 位置环(翻前行动序);buttonPosition 固定为 'BTN'。 */
+const SIX_MAX_POSITIONS = ['UTG', 'MP', 'CO', 'BTN', 'SB', 'BB']
 
 export class TrainingSession {
   /**
@@ -59,9 +59,9 @@ export class TrainingSession {
   // ═══════════════════════════ newHand ═══════════════════════════
 
   /**
-   * 起一手新对局:建 9 座、盲注、发底牌与预留公共牌、初始化事实源。不自动推进(调用方随后 advance)。
+   * 起一手新对局:建 6 座、盲注、发底牌与预留公共牌、初始化事实源。不自动推进(调用方随后 advance)。
    * @param {Object} [opts]
-   * @param {string} [opts.heroPosition] hero 座位位置(缺省随机 9 选 1)
+   * @param {string} [opts.heroPosition] hero 座位位置(缺省随机 6 选 1)
    * @param {{sb:number,bb:number}} [opts.blinds] 缺省 {sb:1,bb:2}
    * @param {number} [opts.stack] 每座开局筹码,缺省 100bb(=100*bb)
    * @param {Record<string,[string,string]>} [opts.forcedHoles] 位置->底牌(测试造牌;键为位置)
@@ -73,10 +73,10 @@ export class TrainingSession {
     const blinds = opts.blinds ?? { sb: 1, bb: 2 }
     const stack = opts.stack ?? blinds.bb * 100 // 翻前深度固定 100bb
     const heroPosition = opts.heroPosition
-      ?? NINE_MAX_POSITIONS[Math.floor(this.rng() * NINE_MAX_POSITIONS.length)]
+      ?? SIX_MAX_POSITIONS[Math.floor(this.rng() * SIX_MAX_POSITIONS.length)]
 
     // 座位:位置即 id(单桌唯一),便于 forced/调试可读。
-    const players = NINE_MAX_POSITIONS.map((pos) => ({
+    const players = SIX_MAX_POSITIONS.map((pos) => ({
       id: pos,
       position: pos,
       stack,
@@ -317,6 +317,8 @@ export class TrainingSession {
     if (!node) return null
     if (node.street === 'preflop') {
       node.preflopLine = computePreflopLine(this.actionLog, node.position)
+      // 对手位(开池者/3bet 者位置):驱动 PreflopChartPolicy 的 hero×villain 双维查表。
+      node.villain = preflopVillain(this.setup, this.actionLog)
     } else {
       node.ranges = this.ranges
       node.spot = {
