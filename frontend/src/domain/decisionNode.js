@@ -20,12 +20,18 @@ import { legalActions } from './legalActions.js';
  */
 export function deriveDecisionNode(state, setup) {
   if (!state.toActId) return null;
+  // P1 集成:把行动方的 position / holeCards 自 setup 透传到节点上,供策略层
+  // (PreflopChartPolicy 需位置与底牌)与训练编排消费。GameState.players(PlayerState)
+  // 不携带这两者,故在此从静态 setup 查回。缺 setup 时退化为 undefined(向后兼容)。
+  const seat = setup?.players?.find((p) => p.id === state.toActId);
   return {
     playerId: state.toActId,
     isHero: setup ? setup.heroId === state.toActId : false,
+    position: seat?.position,
+    holeCards: seat?.holeCards,
     street: state.street,
     legalActions: legalActions(state),
     state,
-    // path / ranges 交由 Phase2 策略层补齐(见文件头)。
+    // preflopLine / path / ranges / spot 交由策略层 / 训练编排补齐(见文件头)。
   };
 }
