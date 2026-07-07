@@ -48,8 +48,13 @@ build-frontend: ## 安装依赖并打包前端静态产物 (输出到 frontend/d
 
 test: test-rust test-frontend ## 运行全部测试
 
-test-rust: ## 运行 Rust 引擎与 WASM 接口层的测试
-	cd $(ENGINE_DIR) && $(CARGO) test
+test-rust: ## 校验 Rust 引擎(产品路径可编译)与 WASM 接口层
+	# postflop-solver 是第三方 vendored 引擎,不由本仓库测试。
+	# 其默认 features 含 bincode(2.0-rc),serialization.rs 与新版 Decode<Context>
+	# API 不兼容,`cargo test` 会失败;examples/file_io.rs 又引用 bincode 门控函数,
+	# 故连 `--no-default-features` 的 test 也编不过。产品只走 wasm 单线程路径,
+	# 这里只验证该路径能编译(与 solver-wasm 的 default-features=false 一致,含 rayon 冒烟)。
+	cd $(ENGINE_DIR) && $(CARGO) build --no-default-features --features rayon
 	cd $(WASM_CRATE_DIR) && $(CARGO) test
 
 test-frontend: $(FRONTEND_DIR)/node_modules ## 前端质量检查 (构建校验)
