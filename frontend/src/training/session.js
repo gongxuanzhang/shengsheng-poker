@@ -185,12 +185,18 @@ export class TrainingSession {
       const gto = node.street === 'preflop'
         ? await this.preflopPolicy.query(node)
         : await this.postflopPolicy.query(node)
-      feedback = this.evaluator.evaluate(action, gto, node)
-      // 翻后:记录 hero 所选动作的引擎下标到路径(供后续节点导航)。
+      // 翻后:求解树只含有限档下注尺寸(betSizes + allin)。hero 若下非引擎档位的额度,
+      // 先把 amount 就近吸附到匹配档位的引擎额度,再评估/落子/记路径——保证 reducer 实际
+      // 下注、评估依据、solver 树内导航三者沿同一条线(否则同街后续节点会沿错误线导航)。
+      // 翻前(查表)无此约束,保持自由。
       if (node.street !== 'preflop') {
         const idx = this._matchIndex(action, gto.actions)
-        if (idx >= 0) this._postflopPath.push(idx)
+        if (idx >= 0) {
+          this._snapHeroSizeToTree(action, gto.actions[idx])
+          this._postflopPath.push(idx)
+        }
       }
+      feedback = this.evaluator.evaluate(action, gto, node)
     } catch (err) {
       feedback = { skipped: true, reason: String(err?.message ?? err) }
     }
@@ -410,6 +416,18 @@ export class TrainingSession {
     const base = { type: action.type, playerId: node.playerId, street: node.street }
     if (action.amount != null) base.amount = action.amount
     return base
+  }
+
+  /**
+   * 翻后:把 hero 的下注/加注尺寸吸附到匹配的引擎档位额度,使 reducer 落子与 solver 导航同线。
+   * 仅对带额度的 bet/raise/allin 生效;引擎档位缺额度时保持原样。原地改写 action.amount。
+   */
+  _snapHeroSizeToTree(action, engineAction) {
+    if (!engineAction) return
+    const t = action.type
+    if (t !== 'bet' && t !== 'raise' && t !== 'allin') return
+    const eng = Number(engineAction.amount)
+    if (Number.isFinite(eng)) action.amount = eng
   }
 
   /** 把动作对齐到策略动作数组,返回下标(类型匹配,多档同类型取额度最近)。 */

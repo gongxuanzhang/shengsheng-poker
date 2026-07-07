@@ -29,6 +29,15 @@ function sameAction(a) {
 
 const gtoActions = computed(() => props.gto?.actions ?? [])
 
+// 频率模式(翻前查表)下的「GTO 最优」= 最高频率动作的 label。
+// 翻前无 EV(ev 恒 0),evaluator 的 bestLabel 由 EV argmax 得 → 恒取首个动作(通常 fold),
+// 与频率条自相矛盾;故频率模式改用最高频率动作。翻后仍用 EV 版 fb.bestLabel。
+const freqBestLabel = computed(() => {
+  const acts = gtoActions.value
+  if (!acts.length) return fb.value?.bestLabel ?? '?'
+  return acts.reduce((b, a) => ((a.frequency ?? 0) > (b.frequency ?? 0) ? a : b)).label
+})
+
 // ── 翻前:频率维度评价 ──
 const freqVerdict = computed(() => {
   const f = fb.value
@@ -92,7 +101,7 @@ function actLabel(a) {
           <span class="v-badge">{{ freqVerdict?.text }}</span>
           <span class="v-sub">
             GTO 对 <b>{{ actLabel(chosenAction) }}</b> 的频率
-            <b>{{ pct(fb.chosenFreq) }}</b> · <Term id="gto" no-click>GTO</Term> 最优 <b>{{ fb.bestLabel }}</b>
+            <b>{{ pct(fb.chosenFreq) }}</b> · <Term id="gto" no-click>GTO</Term> 最优 <b>{{ freqBestLabel }}</b>
           </span>
         </div>
         <div class="freq-list">

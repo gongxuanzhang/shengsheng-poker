@@ -295,6 +295,46 @@ test('全下线:hero 翻前 shove,bot 全下跟注,跑马摊牌结算', async ()
   assert.equal(s.postflopPolicy.disposed, 1) // 本手结束释放会话
 })
 
+// ═══════════════════════════ 翻后下注尺寸吸附到求解树档位 ═══════════════════════════
+
+test('翻后:hero 下非引擎档位尺寸 → 就近吸附到求解树档位(reducer 落子与 path 同线)', async () => {
+  // hero=BB(OOP,翻后先动)对 BTN 的开池跟注进翻牌;翻后 hero 首个决策自由下注。
+  // 只有 BTN 开池,其余(含面对加注)全弃 → 恰两人进翻牌。
+  const decide = (node) => {
+    if (facingRaise(node)) return 'fold'
+    return node.position === 'BTN' ? 'raise' : 'fold'
+  }
+  const s = makeSession({
+    preflopOpts: { decide },
+    rng: mulberry32(3),
+  })
+  s.newHand({ heroPosition: 'BB' })
+  await s.advance()
+  // hero BB 面对 BTN 开池,跟注进翻牌。
+  await s.heroAct({ type: 'call' })
+
+  const node = s.getDecision()
+  assert.equal(node.street, 'flop')
+  assert.equal(node.playerId, 'BB') // OOP 先动
+  const betLA = node.legalActions.find((a) => a.type === 'bet')
+  assert.ok(betLA, '翻后首动应可下注')
+  // 引擎档位额度 = MockPostflop 策略里 bet 的 amount(strategyFromLegal 取 la.min)。
+  const engineBet = betLA.min
+  const offTree = engineBet + 10 // hero 下一个非引擎档位、但合法的尺寸
+  assert.ok(offTree <= betLA.max, '构造的 off-tree 尺寸须仍合法')
+
+  const rec = await s.heroAct({ type: 'bet', amount: offTree })
+  // 反馈正常生成(未被跳过)。
+  assert.ok(rec.feedback && !rec.feedback.skipped)
+  // 关键:actionLog 里落子的 flop 下注额已吸附到引擎档位,而非 hero 输入的 off-tree 值。
+  const flopBet = s.actionLog.find(
+    (a) => a.street === 'flop' && a.type === 'bet' && a.playerId === 'BB',
+  )
+  assert.ok(flopBet, 'flop 下注应已入 actionLog')
+  assert.equal(flopBet.amount, engineBet) // 吸附到求解树档位
+  assert.notEqual(flopBet.amount, offTree) // 不是 hero 原始 off-tree 额
+})
+
 // ═══════════════════════════ 与真 PreflopChartPolicy 集成冒烟 ═══════════════════════════
 
 test('集成:真 PreflopChartPolicy 驱动 bot,推进不崩且节点字段完整', async () => {

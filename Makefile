@@ -17,7 +17,19 @@ WASM_PACK ?= wasm-pack
 .DEFAULT_GOAL := help
 
 .PHONY: help install dev build build-wasm build-frontend \
-        test test-rust test-frontend ci-frontend clean doctor
+        test test-rust test-frontend test-frontend-unit ci-frontend clean doctor
+
+# ---- 前端单测文件清单(领域 + 编排,node --test 直跑,零构建) ----
+# 显式列举而非 glob:CI 的 Node 版本(见 .github/workflows/ci.yml,node 20)对 glob 支持
+# 因版本而异,显式清单最稳。新增测试文件时同步补入此处。
+FRONTEND_UNIT_TESTS := \
+	src/domain/__tests__/positions.test.js \
+	src/domain/__tests__/reducer.test.js \
+	src/domain/eval/deviationEvaluator.test.js \
+	src/domain/policy/preflopChartPolicy.test.js \
+	src/training/__tests__/handEvaluator.test.js \
+	src/training/__tests__/session.test.js \
+	src/training/__tests__/settlement.test.js
 
 help: ## 显示可用命令
 	@echo "shengsheng-poker — 常用命令:"
@@ -57,7 +69,11 @@ test-rust: ## 校验 Rust 引擎(产品路径可编译)与 WASM 接口层
 	cd $(ENGINE_DIR) && $(CARGO) build --no-default-features --features rayon
 	cd $(WASM_CRATE_DIR) && $(CARGO) test
 
-test-frontend: $(FRONTEND_DIR)/node_modules ## 前端质量检查 (构建校验)
+test-frontend-unit: ## 前端领域/编排单测 (node --test,零构建、无外部依赖)
+	# 领域模型 / 策略 / 评估 / 编排的纯 JS 单测。Node >=18 内置 test runner;不依赖 node_modules。
+	cd $(FRONTEND_DIR) && node --test $(FRONTEND_UNIT_TESTS)
+
+test-frontend: test-frontend-unit $(FRONTEND_DIR)/node_modules ## 前端质量检查 (单测 + 构建校验)
 	cd $(FRONTEND_DIR) && $(NPM) run check
 
 ci-frontend: ## CI 前端门禁 (干净安装依赖并构建)

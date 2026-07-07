@@ -60,6 +60,31 @@ vendored 的两人翻后 GTO 引擎之上。读者是要在本仓库继续开发
   multiway(翻后仍多人)的手自然被过滤,因为多人翻后没有 GTO(见 §4)。
 - bot **开局锁定一手具体牌**全程行动(线路自洽、可 showdown,分布仍取自 GTO/范围)。
 
+**编排(单一事实源在代码)**:`frontend/src/training/` 把 §1 的地基串成一手可玩流程。
+`session.js` 的 `TrainingSession` 是编排核心——事实源 `Hand = {setup, actionLog, boardLog}`,
+GameState 恒为 reduce 结果:
+
+- `newHand` 建 9 座/盲注/发牌;`advance()` 自动跑 bot 到 hero 回合或本手结束,并逐街揭示公共牌。
+- **翻前→翻后接缝**:进翻牌前按存活人数分流——恰两人且双方有筹码 → 注入翻前**续牌范围**
+  (`preflopLine.js` 的 `deriveContinuation`)开翻后 solve;3+ 人标注 multiway 跑马摊牌不训练翻后。
+- `heroAct(action)`:先 `GtoPolicy.query` + `DeviationEvaluator` 生成反馈记账,再落动作、`advance()`。
+- 辅助:`deck.js`(洗牌/发牌,可注入 rng)、`handEvaluator.js`(7 张牌力)、`settlement.js`(边池分配)。
+
+**翻后下注尺寸对齐求解树**:求解树只含有限档尺寸(`betSizes` + allin)。hero 若下非引擎档位额度,
+`TrainingSession` 在 `heroAct` 内把 amount 就近吸附到匹配档位的引擎额度,保证 reducer 实际下注、
+评估依据、solver 树内导航三者沿同一条线。翻前(查表)不受此约束、尺寸自由。
+
+**反馈维度按理论边界分**(§4):翻前查表无 EV → **频率维度**(各动作频率 + 是否在支撑集,
+「GTO 最优」取最高频率动作);翻后精确 solve → **EV 维度**(EV 损失 / %pot 严重度 / 支撑集)。
+
+**UI**:`frontend/src/components/train/` —— `TrainerView.vue`(接线 Worker 会话 + 三个策略/评估依赖,
+镜像 `TrainingSession` 快照)、`PokerTable.vue`(军绿牌桌)、`ActionBar.vue`(按 `legalActions` 出招)、
+`FeedbackPanel.vue`(频率/EV 两态反馈 + 决策时间线)、`HandControls.vue`(发新手 + 弱点统计)。
+App.vue 以 Tab 在 SolverView 与训练场间切换。
+
+> 测试:领域 + 编排的纯 JS 单测走 `node --test`(见根 `Makefile` 的 `test-frontend-unit`,
+> 已挂进 CI);翻后真 Worker 路径已单独验证正确。
+
 ## 3. 两大需求共享同一地基
 
 训练与复盘是**同一时间轴上的写 / 读两端**——"实时对局就是正在被书写的复盘"。整套系统

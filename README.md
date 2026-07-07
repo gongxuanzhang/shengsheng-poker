@@ -64,7 +64,9 @@ make dev
 # 等价于: cd frontend && npm install && npm run dev
 ```
 
-启动后打开 http://localhost:5173 ,填写局面并点击 **Solve**。
+启动后打开 http://localhost:5173 ,填写局面并点击 **Solve**。页面顶部 Tab 可切到
+**训练场**:打一手完整的 heads-up 对局,翻前+翻后逐点得 GTO 反馈(设计与实现见
+[docs/ARCHITECTURE.md §2](./docs/ARCHITECTURE.md#2-训练形态真实实战对局))。
 
 若修改了引擎(`postflop-solver/` 或 `solver-wasm/`),需要重新编译 WASM 后再构建前端:
 
@@ -87,7 +89,8 @@ make build
 | `make build-frontend` | 仅安装依赖并打包前端 |
 | `make test` | 运行全部测试 |
 | `make test-rust` | 运行 Rust 引擎与接口层测试 |
-| `make test-frontend` | 前端构建校验 |
+| `make test-frontend` | 前端单测(node --test)+ 构建校验 |
+| `make test-frontend-unit` | 仅前端领域/编排单测(node --test,零构建) |
 | `make clean` | 清理构建产物 |
 
 ## 构建与打包
@@ -102,12 +105,14 @@ make build
 ## 测试 / 质量检查
 
 ```bash
-make test           # Rust 测试 + 前端构建校验
-make test-rust      # 仅 Rust(需要 cargo)
-make test-frontend  # 仅前端构建校验(npm run check)
+make test              # Rust 测试 + 前端单测 + 前端构建校验
+make test-rust         # 仅 Rust(需要 cargo)
+make test-frontend     # 前端单测(node --test)+ 构建校验(npm run check)
+make test-frontend-unit # 仅前端领域/编排单测(node --test,零构建、无外部依赖)
 ```
 
-> 前端的 `check` 通过一次生产构建来校验代码可编译打包;在引入专门的 lint/类型检查工具后可进一步扩展。
+> 前端单测用 Node 内置 test runner(`node --test`,需 Node ≥18)覆盖领域模型/策略/评估/编排;
+> `check` 再通过一次生产构建校验代码可编译打包。二者均已挂进 CI(见 `.github/workflows/ci.yml`)。
 
 ## 后续规划
 

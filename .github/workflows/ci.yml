@@ -33,6 +33,10 @@ jobs:
           node-version: 20
           cache: npm
           cache-dependency-path: frontend/package-lock.json
+      # 领域 + 编排单测(node --test,显式文件清单;setup-node 装的 node 20 内置 test runner)。
+      # 无外部依赖、零构建,先跑以快速暴露逻辑回归。
+      - name: Frontend unit tests (make test-frontend-unit)
+        run: make test-frontend-unit
       # 复用 Makefile 入口:内部为 `npm ci && npm run build`(= vite build 校验可打包)
       - name: Frontend CI gate (make ci-frontend)
         run: make ci-frontend
